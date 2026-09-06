@@ -1,35 +1,149 @@
 import { useState } from "react";
-import Navbar from "./components/layout/Navbar";
-import UploadPanel from "./components/upload/UploadPanel";
+import toast from "react-hot-toast";
+
+import AppShell from "@/components/layout/AppShell";
+import AppHeader from "@/components/layout/AppHeader";
+import UploadPanel from "@/components/document/UploadPanel";
+import ChatWindow from "@/components/chat/ChatWindow";
+import MessageInput from "@/components/chat/MessageInput";
+import SourcePanel from "@/components/source/SourcePanel";
+import { askQuestion, askQuestionStream } from "./services/api";
+import { formatQueryError } from "./utils/formatError";
 
 export default function App() {
-  const [document, setDocument] = useState(null); // { doc_id, filename, chunks_stored }
+  const [document, setDocument] = useState(null); // { doc_id, filename, chunks_stored, uploadedAtLocal }
+  const [messages, setMessages] = useState([]);
+  const [sources, setSources] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  // Mobile/tablet drawer visibility (desktop ignores these -- see AppShell)
+  const [docPanelOpen, setDocPanelOpen] = useState(false);
+  const [sourcePanelOpen, setSourcePanelOpen] = useState(false);
+
+  const handleIngested = (docInfo) => {
+    setDocument(docInfo);
+    setMessages([]); // fresh conversation for the newly indexed document
+    setSources([]);
+    setDocPanelOpen(false);
+  };
+
+  const handleReset = () => {
+    setMessages([]);
+    setSources([]);
+  };
+
+  /**
+   * Updates the text of the currently-streaming assistant message (always
+   * the last item in the list -- MessageInput is disabled while a request
+   * is in flight, so there's never more than one in-progress answer).
+   */
+  const appendToStreamingMessage = (chunk) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const lastIndex = updated.length - 1;
+      updated[lastIndex] = { ...updated[lastIndex], text: updated[lastIndex].text + chunk };
+      return updated;
+    });
+  };
+
+  const finalizeStreamingMessage = (patch) => {
+    setMessages((prev) => {
+      const updated = [...prev];
+      const lastIndex = updated.length - 1;
+      updated[lastIndex] = { ...updated[lastIndex], ...patch, streaming: false };
+      return updated;
+    });
+  };
+
+  /**
+   * Falls back to the original, non-streaming /query endpoint. Used only
+   * when the stream fails before any text has arrived, so a hiccup in the
+   * new streaming path can never make the assistant fail to answer at all
+   * -- worst case, it just degrades to the previous, proven behavior.
+   */
+  const askViaFallback = async (question) => {
+    try {
+      const res = await askQuestion(document.doc_id, question);
+      const { answer, sources: newSources, confidence } = res.data;
+      finalizeStreamingMessage({ text: answer, confidence });
+      setSources(newSources || []);
+    } catch (err) {
+      const message = formatQueryError(err);
+      toast.error(message);
+      finalizeStreamingMessage({
+        text: "I ran into an error answering that. Please try again.",
+        confidence: "low",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAsk = async (question) => {
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", text: question },
+      { role: "assistant", text: "", streaming: true },
+    ]);
+    setLoading(true);
+
+    let receivedAnyToken = false;
+
+    await askQuestionStream(document.doc_id, question, {
+      onToken: (chunk) => {
+        receivedAnyToken = true;
+        setLoading(false); // first token arrived -- swap the "Thinking" indicator for real text
+        appendToStreamingMessage(chunk);
+      },
+      onComplete: ({ sources: newSources, confidence }) => {
+        setLoading(false);
+        finalizeStreamingMessage({ confidence });
+        setSources(newSources || []);
+      },
+      onError: async (err) => {
+        if (receivedAnyToken) {
+          // Answer was partway through -- keep the partial text visible
+          // rather than discarding it, and flag it so the person knows
+          // it may be incomplete.
+          toast.error("The response was interrupted. Please try again.");
+          finalizeStreamingMessage({ confidence: "low" });
+          setLoading(false);
+          return;
+        }
+        // Nothing streamed yet -- silently degrade to the reliable,
+        // non-streaming endpoint instead of surfacing an error.
+        await askViaFallback(question);
+      },
+    });
+  };
 
   return (
-    <div className="flex flex-col h-screen">
-      <Navbar />
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left: Upload & document management (Phase 1) */}
-        <aside className="w-80 shrink-0 border-r p-4" style={{ borderColor: "var(--color-border)" }}>
-          <UploadPanel onIngested={setDocument} />
-        </aside>
-
-        {/* Center: Chat window -- built in Phase 2/3 once /query exists */}
-        <main className="flex-1 flex items-center justify-center p-6">
-          {document ? (
-            <p className="text-small opacity-70 text-center max-w-sm">
-              "{document.filename}" is indexed ({document.chunks_stored} chunks).
-              <br />
-              Chat interface arrives in the next phase.
-            </p>
-          ) : (
-            <p className="text-small opacity-70 text-center max-w-sm">
-              Upload a policy document on the left to get started.
-            </p>
-          )}
-        </main>
-      </div>
-    </div>
+    <AppShell
+      header={
+        <AppHeader
+          hasDocument={!!document}
+          onToggleDocPanel={() => setDocPanelOpen((v) => !v)}
+          onToggleSourcePanel={() => setSourcePanelOpen((v) => !v)}
+        />
+      }
+      documentPanel={<UploadPanel document={document} onIngested={handleIngested} />}
+      chatPanel={
+        <>
+          <ChatWindow
+            document={document}
+            messages={messages}
+            loading={loading}
+            onReset={handleReset}
+            onSuggestionClick={handleAsk}
+          />
+          {document && <MessageInput onSend={handleAsk} disabled={loading} />}
+        </>
+      }
+      sourcePanel={<SourcePanel sources={sources} hasDocument={!!document} />}
+      docPanelOpen={docPanelOpen}
+      sourcePanelOpen={sourcePanelOpen}
+      onCloseDocPanel={() => setDocPanelOpen(false)}
+      onCloseSourcePanel={() => setSourcePanelOpen(false)}
+    />
   );
 }

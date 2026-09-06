@@ -2,7 +2,7 @@ import { createContext, useEffect, useState } from "react";
 
 export const ThemeContext = createContext(null);
 
-const STORAGE_KEY = "policy-assistant-theme"; // stores "light" | "dark" | "system"
+const STORAGE_KEY = "policy-assistant-theme"; // "light" | "dark" | "system"
 
 function getSystemPrefersDark() {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -10,13 +10,13 @@ function getSystemPrefersDark() {
 
 function applyThemeClass(theme) {
   const isDark = theme === "dark" || (theme === "system" && getSystemPrefersDark());
-  document.documentElement.classList.toggle("dark", isDark);
+  const root = document.documentElement;
+  root.classList.toggle("dark", isDark);
+  root.classList.toggle("light", !isDark);
 }
 
 export function ThemeProvider({ children }) {
-  const [theme, setThemeState] = useState(() => {
-    return localStorage.getItem(STORAGE_KEY) || "system";
-  });
+  const [theme, setThemeState] = useState(() => localStorage.getItem(STORAGE_KEY) || "dark");
 
   useEffect(() => {
     applyThemeClass(theme);
@@ -35,9 +35,5 @@ export function ThemeProvider({ children }) {
     setThemeState(next);
   };
 
-  return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
 }

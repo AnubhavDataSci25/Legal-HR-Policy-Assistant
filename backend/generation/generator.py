@@ -84,3 +84,49 @@ def generate_answer(query: str, chunks: list[dict]) -> dict:
         ],
         "confidence": "high",
     }
+
+def generate_answer_stream(query: str, chunks: list[dict]):
+    """
+    Streaming counterpart to generate_answer(). Same grounding rules and
+    confidence guardrail, but yields the answer incrementally as it's
+    generated instead of waiting for the full response.
+ 
+    This is purely additive -- generate_answer() above is untouched and
+    still powers the original, non-streaming /query endpoint exactly as
+    before. This function only powers the new /query/stream endpoint.
+ 
+    Args:
+        query: The user's natural language question.
+        chunks: Reranked chunks from reranker.rerank() -- each must
+                have a "confidence" field.
+ 
+    Yields:
+        str fragments of the answer, in order, as Groq generates them.
+        The caller (routers/query_stream.py) is responsible for building
+        the "sources" list and "confidence" label itself, since it
+        already has access to the same reranked `chunks`.
+    """
+    top_confidence = max((c.get("confidence", 0) for c in chunks), default=0)
+ 
+    if not chunks or top_confidence < CONFIDENCE_THRESHOLD:
+        yield "I don't have enough information in the document to answer this."
+        return
+ 
+    context = _build_context(chunks)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Document excerpts:\n{context}\n\nQuestion: {query}"},
+    ]
+ 
+    stream = client.chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        temperature=0.1,
+        max_tokens=600,
+        stream=True,
+    )
+ 
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            yield delta
