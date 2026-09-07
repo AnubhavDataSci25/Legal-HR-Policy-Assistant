@@ -25,46 +25,43 @@ export default function AppShell({
       {header}
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Desktop persistent document sidebar */}
-        <div
-          className="hidden md:block w-80 shrink-0 border-r overflow-y-auto"
-          style={{ borderColor: "var(--border)" }}
-        >
-          {documentPanel}
-        </div>
+        {/* Desktop persistent document sidebar -- only rendered when a
+            documentPanel is actually provided (workspace pages only) */}
+        {documentPanel && (
+          <div
+            className="hidden md:block w-80 shrink-0 border-r overflow-y-auto"
+            style={{ borderColor: "var(--border)" }}
+          >
+            {documentPanel}
+          </div>
+        )}
 
         {/* Chat -- always the dominant, full-height center column */}
         <main className="flex-1 flex flex-col overflow-hidden min-w-0">{chatPanel}</main>
 
-        {/* Desktop persistent sources panel */}
-        <div
-          className="hidden lg:block w-80 shrink-0 border-l overflow-y-auto"
-          style={{ borderColor: "var(--border)" }}
-        >
-          {sourcePanel}
-        </div>
+        {/* Desktop persistent sources panel -- same conditional rendering */}
+        {sourcePanel && (
+          <div
+            className="hidden lg:block w-80 shrink-0 border-l overflow-y-auto"
+            style={{ borderColor: "var(--border)" }}
+          >
+            {sourcePanel}
+          </div>
+        )}
 
         {/* Mobile/tablet: document drawer overlay */}
-        <Drawer
-          open={docPanelOpen}
-          onClose={onCloseDocPanel}
-          side="left"
-          title="Document"
-          className="md:hidden"
-        >
-          {documentPanel}
-        </Drawer>
+        {documentPanel && (
+          <Drawer open={docPanelOpen} onClose={onCloseDocPanel} side="left" title="Document" className="md:hidden">
+            {documentPanel}
+          </Drawer>
+        )}
 
         {/* Mobile/tablet: sources drawer overlay */}
-        <Drawer
-          open={sourcePanelOpen}
-          onClose={onCloseSourcePanel}
-          side="right"
-          title="Sources"
-          className="lg:hidden"
-        >
-          {sourcePanel}
-        </Drawer>
+        {sourcePanel && (
+          <Drawer open={sourcePanelOpen} onClose={onCloseSourcePanel} side="right" title="Sources" className="lg:hidden">
+            {sourcePanel}
+          </Drawer>
+        )}
       </div>
     </div>
   );
