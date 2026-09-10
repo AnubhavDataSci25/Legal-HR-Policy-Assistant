@@ -146,3 +146,34 @@ export async function askQuestionStream(docId, question, { onToken, onComplete, 
 }
 
 export default client;
+
+/**
+ * Requests up to 3 follow-up question suggestions related to the
+ * question/answer that just happened. Unlike the other functions in
+ * this file, this one deliberately swallows all errors internally and
+ * always resolves to an array (possibly empty) -- follow-up suggestions
+ * are a nice-to-have and must never surface an error or disrupt the
+ * conversation the person is already having.
+ *
+ * @param {string} docId
+ * @param {string} question - the question that was just answered
+ * @param {string} answer - the answer that was just given
+ * @returns {Promise<string[]>} 0-3 suggested follow-up questions
+ */
+export async function getFollowupQuestions(docId, question, answer) {
+  try {
+    const res = await client.post("/followup", { doc_id: docId, question, answer });
+    const questions = res.data?.questions ?? res.data?.follow_ups ?? res.data?.followUps;
+    if (!Array.isArray(questions)) {
+      console.warn("Follow-up response did not contain a question list", res.data);
+      return [];
+    }
+    return questions
+      .map((item) => (typeof item === "string" ? item : item?.question ?? item?.text ?? ""))
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 3);
+  } catch {
+    return [];
+  }
+}
