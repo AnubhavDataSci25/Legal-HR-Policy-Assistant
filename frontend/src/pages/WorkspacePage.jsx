@@ -11,6 +11,7 @@ import FollowupChips from "../components/chat/FollowupChips";
 import SourcePanel from "../components/source/SourcePanel";
 import { askQuestion, askQuestionStream, getFollowupQuestions } from "../services/api";
 import { formatQueryError } from "../utils/formatError";
+import { useWorkspace } from "../context/WorkspaceContext";
 import {
   getRecentDocuments,
   upsertRecentDocument,
@@ -20,26 +21,28 @@ import {
 
 /**
  * WorkspacePage -- the core document Q&A experience: upload, chat, and
- * cited sources. This is the same logic and layout that used to live
- * directly in App.jsx, plus small additions from later features (each
- * clearly marked below):
+ * cited sources.
  *
- *   1. Dashboard integration -- restoring a specific recent document on
- *      arrival, and recording uploads/answers via utils/storage.js.
- *   2. Follow-up questions -- after each successful, confident answer,
- *      fetches up to 3 on-topic follow-up suggestions and shows them as
- *      chips above the input. Fails silently if generation doesn't
- *      succeed (see services/api.js getFollowupQuestions), so it can
- *      never disrupt the core chat flow.
+ * The active document/messages/sources/followups now live in
+ * WorkspaceContext (see context/WorkspaceContext.jsx), not local
+ * useState -- previously they were local to this page, so navigating
+ * to the Dashboard and back (without going through the Dashboard's
+ * "Continue" card, which happened to pass restore data) unmounted this
+ * component and silently lost the uploaded document. Lifting that
+ * state above the router fixes it: it now only ever clears on an
+ * explicit user action (replacing the document, resetting the chat),
+ * never as a side effect of switching pages.
  */
 export default function WorkspacePage() {
   const location = useLocation();
+  const {
+    document, setDocument,
+    messages, setMessages,
+    sources, setSources,
+    followupQuestions, setFollowupQuestions,
+  } = useWorkspace();
 
-  const [document, setDocument] = useState(null); // { doc_id, filename, chunks_stored, uploadedAtLocal }
-  const [messages, setMessages] = useState([]);
-  const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [followupQuestions, setFollowupQuestions] = useState([]);
 
   // Mobile/tablet drawer visibility (desktop ignores these -- see AppShell)
   const [docPanelOpen, setDocPanelOpen] = useState(false);
@@ -50,13 +53,16 @@ export default function WorkspacePage() {
   // result is ever applied.
   const followupRequestId = useRef(0);
 
-  // --- Dashboard integration: restore a specific recent document -------
+  // --- Dashboard integration: switch to a specific recent document -----
   // Only happens when arriving here via a Dashboard "Continue"/"Open"
-  // click (navigation state carries the intent + docId). A plain visit
-  // to /workspace with no state is completely unaffected.
+  // click on a document card (navigation state carries the intent +
+  // docId). Only actually switches if that document isn't already the
+  // active one, so re-clicking the same card never wipes an in-progress
+  // conversation. A plain visit via the "Workspace" nav link (no state)
+  // leaves whatever's already active in context completely untouched.
   useEffect(() => {
     const state = location.state;
-    if (state?.intent === "continue" && state.docId) {
+    if (state?.intent === "continue" && state.docId && document?.doc_id !== state.docId) {
       const match = getRecentDocuments().find((d) => d.docId === state.docId);
       if (match) {
         setDocument({
@@ -65,9 +71,12 @@ export default function WorkspacePage() {
           chunks_stored: match.chunksStored,
           uploadedAtLocal: match.uploadedAt,
         });
+        setMessages([]);
+        setSources([]);
+        setFollowupQuestions([]);
       }
     }
-    // Only ever needs to run once, on arrival.
+    // Only ever needs to run once, on arrival at this mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

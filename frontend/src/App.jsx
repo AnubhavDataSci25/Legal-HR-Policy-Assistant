@@ -1,12 +1,21 @@
 import AppRoutes from "./app/routes";
+import { WorkspaceProvider } from "./context/WorkspaceContext";
 
 /**
- * App is now just the router root. All the actual document Q&A logic
- * that used to live here has moved, unchanged, to pages/WorkspacePage.jsx
- * -- see that file for the real implementation. This keeps App.jsx stable
- * as new pages (Dashboard, Documents, Conversations, ...) get added to
- * app/routes.jsx over time, without this file needing to change.
+ * App is the router root, wrapped in WorkspaceProvider so the active
+ * document + conversation state lives above the routes and survives
+ * navigating between pages (e.g. Dashboard <-> Workspace) -- only an
+ * explicit user action (removing/replacing the document, resetting the
+ * conversation) clears it, never just switching tabs.
+ *
+ * All the actual document Q&A logic lives in pages/WorkspacePage.jsx --
+ * see that file for the real implementation. This keeps App.jsx stable
+ * as new pages get added to app/routes.jsx over time.
  */
 export default function App() {
-  return <AppRoutes />;
+  return (
+    <WorkspaceProvider>
+      <AppRoutes />
+    </WorkspaceProvider>
+  );
 }
