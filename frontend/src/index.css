@@ -94,9 +94,9 @@ h1, h2, h3, h4 {
   letter-spacing: -0.01em;
 }
 
-/* Prevent whole-page scroll; the app shell owns its own scroll regions */
+/* Workspace panels own their scroll regions; public pages use document scroll. */
 #root {
-  overflow: hidden;
+  min-height: 100%;
 }
 
 /* ==========================================================================

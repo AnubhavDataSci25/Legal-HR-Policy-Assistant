@@ -1,0 +1,36 @@
+{
+  "test_cases": [
+    {
+      "question": "Why is a Lease Deed or Rent Agreement required?",
+      "ground_truth": "A lease or rent agreement is an essential document that evidences the leasing or renting of immovable property. It records important terms such as the lease period and purpose of use and can serve as evidence in case of a dispute."
+    },
+    {
+      "question": "What information should a Lease Deed or Rent Agreement cover?",
+      "ground_truth": "A Lease Deed or Rent Agreement should cover the personal details of the parties, rent and deposit details, duties and responsibilities, duration of the lease, maintenance and utility charges, termination and extension terms, landlord visitation rights, security amount, penalty clauses, property and fixture details, general clauses such as applicable laws and dispute settlement, and the date of signing."
+    },
+    {
+      "question": "When is registration of a rent or lease agreement mandatory?",
+      "ground_truth": "If the rent or lease period is more than 11 months, the agreement is mandatorily required to be registered according to the applicable state laws. An agreement up to 11 months does not mandatorily require registration according to the document."
+    },
+    {
+      "question": "What does a Deed of Family Trust provide?",
+      "ground_truth": "A Deed of Family Trust provides flexibility, control, and protection for transferring and managing significant assets for the benefit of family members. It lays down the terms and conditions of the trust and provides the mechanism for its functioning."
+    },
+    {
+      "question": "What should a Deed of Family Trust include?",
+      "ground_truth": "A Deed of Family Trust should include the objects and purpose of the trust, powers of trustees, powers of settlors, duties of settlors, exercise of powers and discretions by the trustee, financial accounts and records and audit, and investment of trust funds."
+    },
+    {
+      "question": "Why is a Deed of Adoption required?",
+      "ground_truth": "A Deed of Adoption is required to declare that the adoption is taking place and records the transfer of legal rights and responsibilities from the biological parent or parents to the adoptive parents. Adoption may be concluded through a registered adoption deed subject to the Hindu Adoption and Maintenance Act, while under the Juvenile Justice Act 2015, an Adoption Order finalizes the adoption and a deed may not be required."
+    },
+    {
+      "question": "What documents should be checked before making an Adoption Deed?",
+      "ground_truth": "The identity proofs of both the adoptive parents and natural parents should be scrutinized. The child's birth certificate and medical test records should also be checked, along with other documents that a lawyer may advise the parties to collect."
+    },
+    {
+      "question": "What documents are required when drafting a legal notice for property partition?",
+      "ground_truth": "The documents that should be scrutinized include identity proof of the legal heir, certified copies of all property title deeds, property valuation, birth and residence proof of the legal heir, the death certificate of the deceased owner, and the residence certificate of the deceased."
+    }
+  ]
+}

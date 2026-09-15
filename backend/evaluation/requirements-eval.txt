@@ -1,0 +1,23 @@
+# Evaluation-only dependencies -- INTENTIONALLY SEPARATE from
+# backend/requirements.txt.
+#
+# Why: ragas 0.1.20 pulls in langchain==0.2.x / langchain-community==0.2.x,
+# which is older than the langchain==0.3.0 / langchain-community==0.3.0
+# already used by the live app (ingestion/chunker.py). Installing both
+# sets of versions into the same environment risks pip silently
+# downgrading packages the running API depends on.
+#
+# Install these into their OWN virtual environment (see evaluation/README.md)
+# -- never into the same venv as backend/requirements.txt. This guarantees
+# running an evaluation can never affect the live app's dependencies.
+
+ragas==0.1.20
+langchain-groq==0.1.10
+datasets==2.21.0
+
+# Uses the same local embedding model as ingestion (all-MiniLM-L6-v2) via
+# langchain's HuggingFace wrapper, purely for RAGAs' internal similarity
+# scoring -- no OpenAI key needed anywhere in this evaluation.
+sentence-transformers==3.1.1
+python-dotenv==1.0.1
+chromadb
