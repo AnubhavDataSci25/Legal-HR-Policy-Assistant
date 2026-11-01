@@ -14,6 +14,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 import logging
 
+from ingestion.embedder import collection_exists
 from retrieval.hybrid import hybrid_retrieve
 from retrieval.reranker import rerank
 from generation.generator import generate_followup_questions
@@ -34,6 +35,9 @@ class FollowupResponse(BaseModel):
 
 @router.post("/followup", response_model=FollowupResponse)
 def suggest_followups(req: FollowupRequest):
+    if not collection_exists(req.doc_id):
+        return {"questions": []}
+
     try:
         # Re-ground in the document using the same question -- gives the
         # follow-up generator real context instead of guessing from the

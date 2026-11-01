@@ -32,9 +32,9 @@ export default function ChatWindow({ document, messages, loading, onReset, onSug
 
         {messages.map((msg, i) =>
           msg.role === "user" ? (
-            <UserMessage key={i} text={msg.text} />
+            <UserMessage key={msg.id || `user-${i}`} text={msg.text} />
           ) : (
-            <AssistantMessage key={i} text={msg.text} confidence={msg.confidence} streaming={msg.streaming} />
+            <AssistantMessage key={msg.id || `asst-${i}`} text={msg.text} confidence={msg.confidence} streaming={msg.streaming} />
           )
         )}
 

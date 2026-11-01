@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 
@@ -9,7 +9,12 @@ import ChatWindow from "../components/chat/ChatWindow";
 import MessageInput from "../components/chat/MessageInput";
 import FollowupChips from "../components/chat/FollowupChips";
 import SourcePanel from "../components/source/SourcePanel";
-import { askQuestion, askQuestionStream, getFollowupQuestions } from "../services/api";
+import {
+  askQuestion,
+  askQuestionStream,
+  getDocumentBrief,
+  getFollowupQuestions,
+} from "../services/api";
 import { formatQueryError } from "../utils/formatError";
 import { useWorkspace } from "../context/WorkspaceContext";
 import {
@@ -17,21 +22,16 @@ import {
   upsertRecentDocument,
   recordLastQuestion,
   incrementQuestionCount,
+  getStoredBrief,
+  setStoredBrief,
 } from "../utils/storage";
 
 /**
- * WorkspacePage -- the core document Q&A experience: upload, chat, and
- * cited sources.
+ * WorkspacePage -- the core document Q&A experience: upload, document brief,
+ * chat, and cited sources.
  *
- * The active document/messages/sources/followups now live in
- * WorkspaceContext (see context/WorkspaceContext.jsx), not local
- * useState -- previously they were local to this page, so navigating
- * to the Dashboard and back (without going through the Dashboard's
- * "Continue" card, which happened to pass restore data) unmounted this
- * component and silently lost the uploaded document. Lifting that
- * state above the router fixes it: it now only ever clears on an
- * explicit user action (replacing the document, resetting the chat),
- * never as a side effect of switching pages.
+ * State is stored in WorkspaceContext so navigating to the Dashboard and back
+ * preserves the active document, conversation, and document brief.
  */
 export default function WorkspacePage() {
   const location = useLocation();
@@ -40,26 +40,58 @@ export default function WorkspacePage() {
     messages, setMessages,
     sources, setSources,
     followupQuestions, setFollowupQuestions,
+    brief, setBrief,
+    briefLoading, setBriefLoading,
+    briefError, setBriefError,
   } = useWorkspace();
 
   const [loading, setLoading] = useState(false);
 
-  // Mobile/tablet drawer visibility (desktop ignores these -- see AppShell)
+  // Mobile/tablet drawer visibility
   const [docPanelOpen, setDocPanelOpen] = useState(false);
   const [sourcePanelOpen, setSourcePanelOpen] = useState(false);
 
-  // Guards against a slow /followup response landing after the user has
-  // already moved on to a newer question -- only the most recent request's
-  // result is ever applied.
+  // Guards against a slow /followup response landing after the user moved on
   const followupRequestId = useRef(0);
 
+  /**
+   * Loads the Document Brief for the specified document ID.
+   * Checks client-side localStorage cache first unless forceRefresh is true.
+   * Non-blocking: failures display a retry button inside the brief panel
+   * without blocking chat or ingestion.
+   */
+  const loadBrief = useCallback(async (docId, forceRefresh = false) => {
+    if (!docId) return;
+
+    if (!forceRefresh) {
+      const cached = getStoredBrief(docId);
+      if (cached) {
+        setBrief(cached);
+        setBriefLoading(false);
+        setBriefError(null);
+        return;
+      }
+    }
+
+    setBriefLoading(true);
+    setBriefError(null);
+
+    try {
+      const res = await getDocumentBrief(docId, forceRefresh);
+      setBrief(res.data);
+      setStoredBrief(docId, res.data);
+      setBriefLoading(false);
+    } catch (err) {
+      console.error("Error loading document brief:", err);
+      const message =
+        err.response?.data?.detail ||
+        "Could not generate document brief. Please check your network or try again.";
+      setBriefError(message);
+      setBriefLoading(false);
+    }
+  }, [setBrief, setBriefLoading, setBriefError]);
+
   // --- Dashboard integration: switch to a specific recent document -----
-  // Only happens when arriving here via a Dashboard "Continue"/"Open"
-  // click on a document card (navigation state carries the intent +
-  // docId). Only actually switches if that document isn't already the
-  // active one, so re-clicking the same card never wipes an in-progress
-  // conversation. A plain visit via the "Workspace" nav link (no state)
-  // leaves whatever's already active in context completely untouched.
   useEffect(() => {
     const state = location.state;
     if (state?.intent === "continue" && state.docId && document?.doc_id !== state.docId) {
@@ -74,11 +106,18 @@ export default function WorkspacePage() {
         setMessages([]);
         setSources([]);
         setFollowupQuestions([]);
+        setBrief(null);
+        loadBrief(match.docId);
       }
     }
-    // Only ever needs to run once, on arrival at this mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [location.state, document?.doc_id, setDocument, setMessages, setSources, setFollowupQuestions, setBrief, loadBrief]);
+
+  // Automatically trigger brief generation if a document is active but has no brief yet
+  useEffect(() => {
+    if (document?.doc_id && !brief && !briefLoading && !briefError) {
+      loadBrief(document.doc_id);
+    }
+  }, [document?.doc_id, brief, briefLoading, briefError, loadBrief]);
 
   const handleIngested = (docInfo) => {
     setDocument(docInfo);
@@ -86,7 +125,9 @@ export default function WorkspacePage() {
     setSources([]);
     setFollowupQuestions([]);
     setDocPanelOpen(false);
-    upsertRecentDocument(docInfo); // Dashboard integration -- record for "Recent Documents"
+    upsertRecentDocument(docInfo);
+    setBrief(null);
+    loadBrief(docInfo.doc_id);
   };
 
   const handleReset = () => {
@@ -96,9 +137,7 @@ export default function WorkspacePage() {
   };
 
   /**
-   * Updates the text of the currently-streaming assistant message (always
-   * the last item in the list -- MessageInput is disabled while a request
-   * is in flight, so there's never more than one in-progress answer).
+   * Updates the text of the currently-streaming assistant message.
    */
   const appendToStreamingMessage = (chunk) => {
     setMessages((prev) => {
@@ -118,8 +157,6 @@ export default function WorkspacePage() {
     });
   };
 
-  // Dashboard integration -- records the question so "Continue where you
-  // left off" and the "Questions asked" stat have real data.
   const recordForDashboard = (question, newSources) => {
     recordLastQuestion(document.doc_id, question, newSources?.[0]?.page_num ?? null);
     incrementQuestionCount();
@@ -127,10 +164,6 @@ export default function WorkspacePage() {
 
   /**
    * Fetches follow-up suggestions for the answer that was just given.
-   * Skipped for low-confidence answers -- suggesting "next questions"
-   * right after the assistant admits it doesn't know the current one
-   * would be more confusing than helpful. Guarded by requestId so a
-   * response for an older question can never overwrite newer chips.
    */
   const fetchFollowups = async (question, answer, confidence, requestId) => {
     if (confidence === "low") return;
@@ -141,10 +174,7 @@ export default function WorkspacePage() {
   };
 
   /**
-   * Falls back to the original, non-streaming /query endpoint. Used only
-   * when the stream fails before any text has arrived, so a hiccup in the
-   * new streaming path can never make the assistant fail to answer at all
-   * -- worst case, it just degrades to the previous, proven behavior.
+   * Falls back to the original, non-streaming /query endpoint.
    */
   const askViaFallback = async (question, requestId) => {
     try {
@@ -170,10 +200,11 @@ export default function WorkspacePage() {
     const requestId = ++followupRequestId.current;
     setFollowupQuestions([]); // clear last turn's suggestions immediately
 
+    const timestamp = Date.now();
     setMessages((prev) => [
       ...prev,
-      { role: "user", text: question },
-      { role: "assistant", text: "", streaming: true },
+      { id: `user-${timestamp}`, role: "user", text: question },
+      { id: `asst-${timestamp + 1}`, role: "assistant", text: "", streaming: true },
     ]);
     setLoading(true);
 
@@ -196,16 +227,11 @@ export default function WorkspacePage() {
       },
       onError: async (err) => {
         if (receivedAnyToken) {
-          // Answer was partway through -- keep the partial text visible
-          // rather than discarding it, and flag it so the person knows
-          // it may be incomplete.
           toast.error("The response was interrupted. Please try again.");
           finalizeStreamingMessage({ confidence: "low" });
           setLoading(false);
           return;
         }
-        // Nothing streamed yet -- silently degrade to the reliable,
-        // non-streaming endpoint instead of surfacing an error.
         await askViaFallback(question, requestId);
       },
     });
@@ -220,7 +246,16 @@ export default function WorkspacePage() {
           onToggleSourcePanel={() => setSourcePanelOpen((v) => !v)}
         />
       }
-      documentPanel={<UploadPanel document={document} onIngested={handleIngested} />}
+      documentPanel={
+        <UploadPanel
+          document={document}
+          onIngested={handleIngested}
+          brief={brief}
+          briefLoading={briefLoading}
+          briefError={briefError}
+          onRetryBrief={() => document?.doc_id && loadBrief(document.doc_id, true)}
+        />
+      }
       chatPanel={
         <>
           <ChatWindow
@@ -238,7 +273,7 @@ export default function WorkspacePage() {
           )}
         </>
       }
-      sourcePanel={<SourcePanel sources={sources} hasDocument={!!document} />}
+      sourcePanel={<SourcePanel sources={sources} hasDocument={!!document} docId={document?.doc_id} />}
       docPanelOpen={docPanelOpen}
       sourcePanelOpen={sourcePanelOpen}
       onCloseDocPanel={() => setDocPanelOpen(false)}

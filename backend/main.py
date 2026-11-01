@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import ingest, query, query_stream, followup
+from routers import ingest, query, query_stream, followup, brief, document
 
 app = FastAPI(
     title="Legal and HR Policy RAG API",
@@ -21,7 +21,9 @@ app.include_router(ingest.router)
 app.include_router(query.router)
 app.include_router(query_stream.router)
 app.include_router(followup.router)
+app.include_router(brief.router)
+app.include_router(document.router)
 
-app.get("/")
+@app.get("/")
 def health_check():
-    return {"status": "ok", "service": "rag-policy-assisstant-api"}
+    return {"status": "ok", "service": "rag-policy-assistant-api"}

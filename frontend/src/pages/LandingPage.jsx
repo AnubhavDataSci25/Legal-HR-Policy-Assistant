@@ -694,7 +694,7 @@ const TechStack = () => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500 mb-2">Language Model</p>
-                  <div className="flex flex-wrap gap-2"><TechBadge>Llama 3.1 8B</TechBadge><TechBadge>Groq API</TechBadge></div>
+                  <div className="flex flex-wrap gap-2"><TechBadge>GPT-OSS 20B / Llama 3.1</TechBadge><TechBadge>Groq API</TechBadge></div>
                 </div>
               </div>
             </div>

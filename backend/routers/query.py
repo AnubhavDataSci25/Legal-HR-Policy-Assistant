@@ -8,6 +8,7 @@ grounded, cited answer.
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from ingestion.embedder import collection_exists
 from retrieval.hybrid import hybrid_retrieve
 from retrieval.reranker import rerank
 from generation.generator import generate_answer
@@ -35,6 +36,12 @@ class QueryResponse(BaseModel):
 def query_document(req: QueryRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    if not collection_exists(req.doc_id):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Document '{req.doc_id}' not found. Please upload the document first.",
+        )
 
     try:
         candidates = hybrid_retrieve(req.question, req.doc_id, top_k=10)

@@ -12,7 +12,10 @@ import math
 from sentence_transformers import CrossEncoder
 
 # Loaded once at import time -- ~90MB model, downloads on first run.
-_reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512)
+try:
+    _reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512, local_files_only=True)
+except Exception:
+    _reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", max_length=512)
 
 
 def _sigmoid(x: float) -> float:

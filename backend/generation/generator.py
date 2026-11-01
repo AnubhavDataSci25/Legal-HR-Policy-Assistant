@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 #   "llama-3.1-8b-instant"    -> fastest, recommended default
 #   "llama-3.3-70b-versatile" -> smarter, better for complex legal text
 #   "gemma2-9b-it"             -> concise, structured answers
-MODEL = "openai/gpt-oss-20b"
+MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 
 # Below this confidence, the top retrieved chunk isn't a good enough
 # match to answer from -- refuse instead of guessing.
@@ -209,7 +209,7 @@ def _parse_followup_questions(raw: str) -> list[str]:
                     return [str(value).strip() for value in values if str(value).strip()][:3]
     except (json.JSONDecodeError, TypeError, ValueError):
         pass
-
+ 
     lines = [line.strip() for line in fenced.splitlines() if line.strip()]
     cleaned = [
         re.sub(r"^[\-\*\d\.\)\s]+", "", line).strip().strip('"').rstrip(",")
@@ -226,7 +226,7 @@ def _parse_followup_questions(raw: str) -> list[str]:
         questions.append(item)
     if questions:
         return questions[:3]
-
+ 
     # Last fallback for a single-line response containing several questions.
     inline = re.findall(r"[^?]{8,}\?", fenced)
     return [item.strip(" -•\"'") for item in inline if item.strip()][:3]
@@ -289,3 +289,224 @@ def generate_followup_questions(question: str, answer: str, chunks: list[dict]) 
     except Exception:
         logger.exception("Follow-up model request failed")
         return []
+
+
+# ---------------------------------------------------------------------------
+# Document Brief Generation
+# ---------------------------------------------------------------------------
+
+BRIEF_SYSTEM_PROMPT = """You are an expert legal and HR policy document analyst. Your job is to extract an accurate, structured Document Brief from the provided document excerpts.
+
+Follow these strict rules:
+1. ONLY extract information explicitly supported by the excerpts. Never use outside knowledge or assume terms not in the text.
+2. If a section has no relevant information found in the excerpts, return an empty array for that list. Do not invent or guess information.
+3. For all extracted items, preserve exact values, dates, amounts, parties, conditions, and qualifiers.
+4. Distinguish explicit statements from interpretations. Do not state something is an obligation unless the text explicitly says so (e.g. "shall", "must", "agrees to").
+5. Source page references: Every chunk begins with [Page X]. Always cite the exact page number where the fact was found (as an integer). If an item spans multiple or cannot be tied to a specific page, set page to null. Never invent a page number.
+6. Provide a concise source excerpt (max 150 characters) demonstrating the exact backing statement for key clauses and significant terms.
+7. Return your response as a valid JSON object matching the exact structure below. Output ONLY JSON, without markdown fences or preamble text.
+
+Schema:
+{
+  "summary": "Concise 2-4 sentence plain-language overview of the document's purpose, scope, and subject matter.",
+  "key_clauses": [
+    {
+      "title": "Clause Title (e.g. Termination, Scope of Work, Confidentiality)",
+      "description": "Plain language explanation of what the clause provides.",
+      "page": 4,
+      "source_excerpt": "Exact or near-exact quote from document backing this clause"
+    }
+  ],
+  "dates_and_deadlines": [
+    {
+      "item": "Name of date/deadline (e.g. Notice Period, Effective Date, Expiry Date)",
+      "value": "Exact date, timeframe, or period (e.g. 30 days, 11 months, within 7 days)",
+      "context": "Conditions or circumstances under which this applies",
+      "page": 2
+    }
+  ],
+  "amounts_and_financial_terms": [
+    {
+      "item": "Name of financial term (e.g. Monthly Rent, Security Deposit, Overtime Rate, Penalty)",
+      "value": "Exact monetary figure or calculation formula (e.g. $2,500/month, Rs. 15,000, 10% penalty)",
+      "context": "Payment terms, due date, or conditions",
+      "page": 3
+    }
+  ],
+  "obligations": [
+    {
+      "party": "Party with obligation (e.g. Employee, Employer, Tenant, Landlord)",
+      "obligation": "Clear description of the explicit duty or requirement",
+      "page": 5
+    }
+  ],
+  "risks_and_conditions": [
+    {
+      "item": "Risk, penalty, or restrictive condition (e.g. Forfeiture of deposit, Non-compete, Default interest)",
+      "condition": "Triggering event or specific consequence stated in document",
+      "page": 6
+    }
+  ],
+  "unspecified_information": [
+    {
+      "item": "Notable omission or missing clause (e.g. Dispute Resolution Venue, Renewal Terms, Severability)",
+      "description": "Explanation of why this standard detail appears absent from the document"
+    }
+  ]
+}"""
+
+
+def select_brief_chunks(chunks: list[dict], max_chunks: int = 18) -> list[dict]:
+    """
+    Selects representative, bounded, token-aware chunks across a document
+    for Document Brief generation.
+    """
+    if len(chunks) <= max_chunks:
+        return chunks
+
+    PRIORITY_KEYWORDS = [
+        "clause", "section", "article", "purpose", "scope", "definition",
+        "date", "effective", "commence", "period", "term", "month", "year", "day", "deadline", "notice", "renewal", "expiry",
+        "rent", "deposit", "payment", "fee", "amount", "charge", "salary", "compensation", "cost", "interest", "penalty", "rupees", "dollar", "inr", "$", "rs",
+        "shall", "must", "agrees", "responsible", "duty", "obligation", "undertake", "covenant", "comply",
+        "terminate", "termination", "default", "breach", "remedy", "liable", "liability", "indemnif", "dispute", "prohibit", "restrict", "forfeit", "jurisdiction", "governing law"
+    ]
+
+    head_chunks = chunks[:3]
+    tail_chunks = chunks[-2:]
+    head_ids = {c.get("chunk_id", i) for i, c in enumerate(head_chunks)}
+    tail_ids = {c.get("chunk_id", len(chunks) - 2 + i) for i, c in enumerate(tail_chunks)}
+
+    middle_candidates = [
+        (i, c) for i, c in enumerate(chunks[3:-2], start=3)
+        if c.get("chunk_id", i) not in head_ids and c.get("chunk_id", i) not in tail_ids
+    ]
+
+    budget_middle = max_chunks - len(head_chunks) - len(tail_chunks)
+
+    scored_middle = []
+    for orig_idx, chunk in middle_candidates:
+        text_lower = chunk["text"].lower()
+        score = sum(1 for kw in PRIORITY_KEYWORDS if kw in text_lower)
+        scored_middle.append((score, orig_idx, chunk))
+
+    scored_middle.sort(key=lambda x: x[0], reverse=True)
+
+    selected_middle = []
+    seen_pages = set()
+    remaining = []
+    for score, orig_idx, chunk in scored_middle:
+        pg = chunk.get("page_num")
+        if pg not in seen_pages and len(selected_middle) < budget_middle:
+            seen_pages.add(pg)
+            selected_middle.append((orig_idx, chunk))
+        else:
+            remaining.append((orig_idx, chunk))
+
+    for orig_idx, chunk in remaining:
+        if len(selected_middle) >= budget_middle:
+            break
+        selected_middle.append((orig_idx, chunk))
+
+    all_selected = [(i, c) for i, c in enumerate(head_chunks)]
+    all_selected.extend(selected_middle)
+    all_selected.extend([(len(chunks) - 2 + i, c) for i, c in enumerate(tail_chunks)])
+    all_selected.sort(key=lambda x: x[0])
+    return [c for _, c in all_selected]
+
+
+def _parse_brief_json(raw: str) -> dict:
+    import json
+    import re
+
+    raw = raw.strip()
+    fenced = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+    fenced = re.sub(r"\n?```$", "", fenced).strip()
+
+    match = re.search(r"\{.*\}", fenced, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except Exception:
+            pass
+
+    try:
+        return json.loads(fenced)
+    except Exception as e:
+        logger.warning("Failed strict JSON parse for brief: %s", e)
+        return {}
+
+
+def generate_document_brief(doc_id: str, chunks: list[dict]) -> dict:
+    """
+    Generates a structured Document Brief for an ingested document using Groq.
+    Preserves exact citations, page metadata, and grounded findings.
+    """
+    from datetime import datetime, timezone
+
+    if not chunks:
+        raise ValueError("Cannot generate brief for empty chunks")
+
+    selected_chunks = select_brief_chunks(chunks, max_chunks=18)
+    context = _build_context(selected_chunks)
+
+    user_content = (
+        "Document excerpts:\n"
+        + context
+        + "\n\nGenerate the comprehensive Document Brief conforming to the JSON schema."
+    )
+
+    kwargs = {
+        "model": MODEL,
+        "messages": [
+            {"role": "system", "content": BRIEF_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+        "temperature": 0.1,
+        "max_tokens": 2000,
+    }
+
+    if "gpt-oss" in MODEL:
+        kwargs["reasoning_effort"] = "low"
+        kwargs["include_reasoning"] = False
+
+    try:
+        response = client.chat.completions.create(**kwargs)
+        content = response.choices[0].message.content or ""
+        parsed = _parse_brief_json(content)
+    except Exception as e:
+        logger.exception("Groq API call for Document Brief failed: %s", e)
+        raise RuntimeError(f"Brief generation failed: {str(e)}") from e
+
+    def sanitize_items(items, page_key="page"):
+        if not isinstance(items, list):
+            return []
+        cleaned = []
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            item_copy = dict(it)
+            if page_key in item_copy:
+                val = item_copy[page_key]
+                if val is not None:
+                    try:
+                        item_copy[page_key] = int(val)
+                    except (ValueError, TypeError):
+                        item_copy[page_key] = None
+            cleaned.append(item_copy)
+        return cleaned
+
+    brief = {
+        "document_id": doc_id,
+        "status": "completed",
+        "summary": parsed.get("summary") or "Executive summary not available for this document.",
+        "key_clauses": sanitize_items(parsed.get("key_clauses")),
+        "dates_and_deadlines": sanitize_items(parsed.get("dates_and_deadlines")),
+        "amounts_and_financial_terms": sanitize_items(parsed.get("amounts_and_financial_terms")),
+        "obligations": sanitize_items(parsed.get("obligations")),
+        "risks_and_conditions": sanitize_items(parsed.get("risks_and_conditions")),
+        "unspecified_information": sanitize_items(parsed.get("unspecified_information")),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    return brief

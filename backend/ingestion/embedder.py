@@ -6,19 +6,38 @@ this runs entirely on your machine, free.
 """
 
 import os
+from pathlib import Path
 from sentence_transformers import SentenceTransformer
 import chromadb
 
 # Loaded once at import time -- ~80MB model, downloads on first run.
-_model = SentenceTransformer("all-MiniLM-L6-v2")
+try:
+    _model = SentenceTransformer("all-MiniLM-L6-v2", local_files_only=True)
+except Exception:
+    _model = SentenceTransformer("all-MiniLM-L6-v2")
 
-CHROMA_DIR = os.getenv("CHROMA_PERSIST_DIR", "./chroma_store")
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+_env_chroma_dir = os.getenv("CHROMA_PERSIST_DIR", str(BACKEND_DIR / "chroma_store"))
+if not os.path.isabs(_env_chroma_dir):
+    CHROMA_DIR = str((BACKEND_DIR / _env_chroma_dir).resolve())
+else:
+    CHROMA_DIR = _env_chroma_dir
+
+_chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
 
 
 def get_chroma_collection(doc_id: str):
     """Returns (creating if needed) the ChromaDB collection for a document."""
-    client = chromadb.PersistentClient(path=CHROMA_DIR)
-    return client.get_or_create_collection(name=doc_id)
+    return _chroma_client.get_or_create_collection(name=doc_id)
+
+
+def collection_exists(doc_id: str) -> bool:
+    """Checks whether a ChromaDB collection exists and contains documents for the given doc_id."""
+    try:
+        col = _chroma_client.get_collection(name=doc_id)
+        return col.count() > 0
+    except Exception:
+        return False
 
 
 def embed_and_store(chunks: list[dict], doc_id: str) -> int:

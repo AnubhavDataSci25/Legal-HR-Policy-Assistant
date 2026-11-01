@@ -1,8 +1,8 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
-import { ChevronDown, FileText } from "lucide-react";
+import { ChevronDown, Eye, FileText } from "lucide-react";
 
-export default function SourceCard({ source, index }) {
+export default function SourceCard({ source, index, onViewPage }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -13,20 +13,55 @@ export default function SourceCard({ source, index }) {
         border: `1px solid ${expanded ? "var(--border-strong)" : "var(--border)"}`,
       }}
     >
-      <button
-        onClick={() => setExpanded((e) => !e)}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left"
-        aria-expanded={expanded}
-        aria-controls={`source-excerpt-${index}`}
-      >
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="flex items-center gap-2 min-w-0 flex-1 text-left select-none"
+          aria-expanded={expanded}
+          aria-controls={`source-excerpt-${index}`}
+        >
           <FileText size={13} style={{ color: "var(--accent)" }} className="shrink-0" />
           <span className="text-sm font-medium">Page {source.page_num}</span>
+        </button>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onViewPage && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewPage(index);
+              }}
+              title={`View page ${source.page_num} with highlighted citation`}
+              aria-label={`View page ${source.page_num}`}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors hover:bg-surface-elevated"
+              style={{
+                color: "var(--text-secondary)",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <Eye size={12} style={{ color: "var(--accent)" }} />
+              <span>View page</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            aria-label={expanded ? "Collapse excerpt" : "Expand excerpt"}
+            className="p-1 rounded hover:bg-surface-elevated transition-colors"
+          >
+            <motion.span
+              animate={{ rotate: expanded ? 180 : 0 }}
+              transition={{ duration: 0.18 }}
+              className="inline-block"
+            >
+              <ChevronDown size={15} style={{ color: "var(--text-muted)" }} />
+            </motion.span>
+          </button>
         </div>
-        <motion.span animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.18 }}>
-          <ChevronDown size={15} style={{ color: "var(--text-muted)" }} />
-        </motion.span>
-      </button>
+      </div>
 
       <AnimatePresence initial={false}>
         {expanded && (

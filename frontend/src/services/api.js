@@ -29,6 +29,29 @@ export function uploadDocument(file, onProgress) {
 }
 
 /**
+ * Requests or retrieves the structured Document Brief for an ingested document.
+ * Returns { document_id, status, summary, key_clauses, dates_and_deadlines, amounts_and_financial_terms, obligations, risks_and_conditions, unspecified_information, generated_at }.
+ */
+export function getDocumentBrief(docId, forceRefresh = false) {
+  return client.post(`/documents/${docId}/brief`, null, {
+    params: forceRefresh ? { force_refresh: true } : {},
+  });
+}
+
+/**
+ * Constructs the direct URL to render a document page PNG with optional highlighted excerpt.
+ * Returns a URL string used directly as an <img src>. Does NOT use axios.
+ */
+export function getSourcePageUrl(docId, pageNum, excerpt) {
+  const base = BASE_URL.replace(/\/+$/, "");
+  const url = new URL(`${base}/document/${encodeURIComponent(docId)}/page/${encodeURIComponent(pageNum)}`);
+  if (excerpt) {
+    url.searchParams.set("q", excerpt);
+  }
+  return url.toString();
+}
+
+/**
  * Asks a question against an ingested document.
  * Returns { answer, sources: [{page_num, excerpt}], confidence: "high"|"low" }.
  */

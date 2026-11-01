@@ -8,6 +8,7 @@ returns a doc_id the frontend uses for all future queries.
 import os
 import shutil
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
@@ -17,7 +18,8 @@ from ingestion.extractor import extract_text_from_pdf
 
 router = APIRouter()
 
-UPLOAD_DIR = "uploaded_docs"
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+UPLOAD_DIR = BACKEND_DIR / "uploaded_docs"
 ALLOWED_EXTENSION = ".pdf"
 MAX_FILE_SIZE_MB = 20
 
@@ -28,10 +30,15 @@ async def ingest_document(file: UploadFile = File(...)):
     if not file.filename.lower().endswith(ALLOWED_EXTENSION):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Sanitize client-provided filename to prevent directory traversal
+    safe_filename = Path(file.filename).name
+    if not safe_filename:
+        safe_filename = "document.pdf"
 
     doc_id = str(uuid.uuid4())[:8]
-    save_path = os.path.join(UPLOAD_DIR, f"{doc_id}_{file.filename}")
+    save_path = UPLOAD_DIR / f"{doc_id}_{safe_filename}"
 
     with open(save_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
@@ -46,7 +53,7 @@ async def ingest_document(file: UploadFile = File(...)):
 
     # --- Pipeline ---
     try:
-        pages = extract_text_from_pdf(save_path)
+        pages = extract_text_from_pdf(str(save_path))
         if not pages:
             raise HTTPException(
                 status_code=422,
@@ -63,7 +70,7 @@ async def ingest_document(file: UploadFile = File(...)):
 
     return {
         "doc_id": doc_id,
-        "filename": file.filename,
+        "filename": safe_filename,
         "pages_processed": len(pages),
         "chunks_stored": chunks_stored,
     }

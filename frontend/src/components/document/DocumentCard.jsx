@@ -1,12 +1,20 @@
 import { CheckCircle2, FileText, RotateCcw } from "lucide-react";
 import { truncateFilename } from "../../utils/formatFileName";
+import DocumentBrief from "./DocumentBrief";
 
 /**
- * The "active document" card. Only displays metadata the backend
- * actually returns from POST /ingest (filename, chunks_stored) plus
- * a client-side upload timestamp -- nothing fabricated.
+ * The "active document" card. Displays metadata from POST /ingest
+ * plus the automatic Document Brief (Executive summary, clauses, dates,
+ * financial terms, obligations, risks, and missing information).
  */
-export default function DocumentCard({ document, onReplace }) {
+export default function DocumentCard({
+  document,
+  onReplace,
+  brief,
+  briefLoading,
+  briefError,
+  onRetryBrief,
+}) {
   const uploadedAt = document.uploadedAtLocal
     ? new Date(document.uploadedAtLocal).toLocaleTimeString([], {
         hour: "2-digit",
@@ -49,6 +57,14 @@ export default function DocumentCard({ document, onReplace }) {
         <span>{document.chunks_stored} chunks indexed</span>
         {uploadedAt && <span>Uploaded {uploadedAt}</span>}
       </div>
+
+      {/* Document Brief Section */}
+      <DocumentBrief
+        brief={brief}
+        loading={briefLoading}
+        error={briefError}
+        onRetry={onRetryBrief}
+      />
 
       <button
         onClick={onReplace}

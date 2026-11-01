@@ -18,6 +18,7 @@ import json
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from ingestion.embedder import collection_exists
 from retrieval.hybrid import hybrid_retrieve
 from retrieval.reranker import rerank
 from generation.generator import CONFIDENCE_THRESHOLD, generate_answer_stream
@@ -30,6 +31,12 @@ router = APIRouter()
 def query_document_stream(req: QueryRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+    if not collection_exists(req.doc_id):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Document '{req.doc_id}' not found. Please upload the document first.",
+        )
 
     try:
         candidates = hybrid_retrieve(req.question, req.doc_id, top_k=10)

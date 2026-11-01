@@ -22,7 +22,14 @@ import Button from "../common/Button";
  * the document before /ingest responds -- that gap is now shown
  * honestly as "processing" instead of a stalled 100% bar.
  */
-export default function UploadPanel({ document, onIngested }) {
+export default function UploadPanel({
+  document,
+  onIngested,
+  brief,
+  briefLoading,
+  briefError,
+  onRetryBrief,
+}) {
   const [status, setStatus] = useState("idle"); // idle | uploading | processing | error
   const [progress, setProgress] = useState(0);
   const [pendingFile, setPendingFile] = useState(null);
@@ -41,7 +48,7 @@ export default function UploadPanel({ document, onIngested }) {
         setProgress(pct);
         // Upload bytes have fully arrived at the server -- the backend is
         // now doing real work (extract -> chunk -> embed) with no progress
-        // signal of its own, so we switch to an honest indeterminate state.
+        // signal of its own, so we switch to an indeterminate state.
         if (pct >= 100) setStatus("processing");
       });
 
@@ -82,7 +89,14 @@ export default function UploadPanel({ document, onIngested }) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
           >
-            <DocumentCard document={document} onReplace={() => setConfirmingReplace(true)} />
+            <DocumentCard
+              document={document}
+              onReplace={() => setConfirmingReplace(true)}
+              brief={brief}
+              briefLoading={briefLoading}
+              briefError={briefError}
+              onRetryBrief={onRetryBrief}
+            />
           </motion.div>
         )}
 
@@ -100,7 +114,7 @@ export default function UploadPanel({ document, onIngested }) {
             <div className="flex items-start gap-2">
               <AlertCircle size={16} style={{ color: "var(--warning)" }} className="shrink-0 mt-0.5" />
               <p className="text-sm">
-                Replacing the document will clear the current conversation. Continue?
+                Replacing the document will clear the current conversation and brief. Continue?
               </p>
             </div>
             <div className="flex gap-2">

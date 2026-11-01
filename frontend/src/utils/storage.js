@@ -95,3 +95,26 @@ export function incrementQuestionCount() {
   safeSet(QUESTION_COUNT_KEY, next);
   return next;
 }
+const BRIEF_KEY_PREFIX = "policy-assistant:brief:";
+
+/** Retrieves a cached Document Brief from localStorage. */
+export function getStoredBrief(docId) {
+  if (!docId) return null;
+  return safeGet(`${BRIEF_KEY_PREFIX}${docId}`, null);
+}
+
+/** Saves a Document Brief to localStorage for instant reuse across sessions. */
+export function setStoredBrief(docId, brief) {
+  if (!docId || !brief) return;
+  safeSet(`${BRIEF_KEY_PREFIX}${docId}`, brief);
+}
+
+/** Removes a cached Document Brief from localStorage. */
+export function removeStoredBrief(docId) {
+  if (!docId) return;
+  try {
+    localStorage.removeItem(`${BRIEF_KEY_PREFIX}${docId}`);
+  } catch {
+    // Storage unavailable
+  }
+}

@@ -29,16 +29,18 @@ backend/
   retrieval/      # semantic, BM25, hybrid retrieval, reranking
   generation/     # answer and follow-up generation
   routers/        # /ingest, /query, /query/stream, /followup
+  evaluation/     # RAGAs evaluation suite with test_set.json
   main.py         # FastAPI app entrypoint
 
 frontend/
-  src/pages/      # Dashboard and workspace pages
+  src/pages/      # Landing, Dashboard, and Workspace pages
   src/components/ # Upload, chat, source, layout components
   src/services/   # API calls (including streaming parser)
 ```
 
 ## API endpoints
 
+- `GET /` -> API health check
 - `POST /ingest` -> upload PDF, returns `doc_id`
 - `POST /query` -> standard grounded answer + sources + confidence
 - `POST /query/stream` -> token stream + `[[SOURCES]]{...}` metadata tail
@@ -49,17 +51,18 @@ frontend/
 ### 1) Backend
 
 ```bash
-cd /home/runner/work/Legal-HR-Policy-Assistant/Legal-HR-Policy-Assistant/backend
+cd backend
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Create `backend/.env`:
+Create `backend/.env` (or copy from `backend/.env.example`):
 
 ```env
 GROQ_API_KEY=your_key_here
-# optional
+# Optional configuration:
+# GROQ_MODEL=openai/gpt-oss-20b
 # CHROMA_PERSIST_DIR=./chroma_store
 ```
 
@@ -72,11 +75,11 @@ uvicorn main:app --reload --port 8000
 ### 2) Frontend
 
 ```bash
-cd /home/runner/work/Legal-HR-Policy-Assistant/Legal-HR-Policy-Assistant/frontend
+cd frontend
 npm install
 ```
 
-Optional `frontend/.env`:
+Optional `frontend/.env` (or copy from `frontend/.env.example`):
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000
@@ -88,9 +91,21 @@ Run UI:
 npm run dev
 ```
 
+### 3) Offline Evaluation (Optional)
+
+Run the RAGAs pipeline evaluation in a separate environment to avoid library conflicts:
+
+```bash
+cd backend
+python -m venv .venv-eval
+source .venv-eval/bin/activate   # Windows: .venv-eval\Scripts\activate
+pip install -r evaluation/requirements-eval.txt
+python evaluation/evaluate.py --doc-id <your_doc_id>
+```
+
 ## Typical usage
 
-1. Open the frontend app.
+1. Open the frontend app at `http://localhost:5173`.
 2. Upload a PDF policy/handbook/contract.
 3. Ask questions in the workspace chat.
 4. Review cited sources and follow-up suggestions.
