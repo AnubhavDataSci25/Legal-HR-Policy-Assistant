@@ -36,12 +36,23 @@ provided document excerpts. Follow these rules:
 4. Keep answers concise and direct -- 2-4 sentences unless the question needs a list.
 """
 
+SYSTEM_PROMPT_DETAILED = """You are a helpful assistant that answers questions strictly based on the
+provided document excerpts. Follow these rules:
+
+1. Only use information present in the excerpts below -- never use outside knowledge.
+2. If the excerpts do not contain enough information to answer confidently, respond with
+   exactly: "I don't have enough information in the document to answer this."
+3. Always cite the page number(s) your answer came from, like "(Page 4)".
+4. Keep answers concise and direct -- 2-4 sentences unless the question needs a list.
+5. Give a thorough, structured answer, using a short list where helpful.
+"""
+
 
 def _build_context(chunks: list[dict]) -> str:
     return "\n\n".join(f"[Page {c['page_num']}]: {c['text']}" for c in chunks)
 
 
-def generate_answer(query: str, chunks: list[dict]) -> dict:
+def generate_answer(query: str, chunks: list[dict], answer_style: str = "concise") -> dict:
     """
     Generates a grounded answer from the reranked chunks.
 
@@ -49,11 +60,12 @@ def generate_answer(query: str, chunks: list[dict]) -> dict:
         query: The user's natural language question.
         chunks: Reranked chunks from reranker.rerank() -- each must
                 have a "confidence" field.
+        answer_style: "concise" (default) or "detailed".
 
     Returns:
         {
             "answer": str,
-            "sources": [{"page_num", "excerpt"}, ...],
+            "sources": [{"page_num", "excerpt", "confidence"}, ...],
             "confidence": "high" | "low",
         }
     """
@@ -66,9 +78,12 @@ def generate_answer(query: str, chunks: list[dict]) -> dict:
             "confidence": "low",
         }
 
+    system_prompt = SYSTEM_PROMPT_DETAILED if answer_style == "detailed" else SYSTEM_PROMPT
+    max_tokens = 900 if answer_style == "detailed" else 600
+
     context = _build_context(chunks)
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Document excerpts:\n{context}\n\nQuestion: {query}"},
     ]
 
@@ -76,18 +91,24 @@ def generate_answer(query: str, chunks: list[dict]) -> dict:
         model=MODEL,
         messages=messages,
         temperature=0.1,
-        max_tokens=600,
+        max_tokens=max_tokens,
     )
 
     return {
         "answer": response.choices[0].message.content,
         "sources": [
-            {"page_num": c["page_num"], "excerpt": c["text"][:200]} for c in chunks
+            {
+                "page_num": c["page_num"],
+                "excerpt": c["text"][:200],
+                "confidence": c.get("confidence"),
+            }
+            for c in chunks
         ],
         "confidence": "high",
     }
 
-def generate_answer_stream(query: str, chunks: list[dict]):
+
+def generate_answer_stream(query: str, chunks: list[dict], answer_style: str = "concise"):
     """
     Streaming counterpart to generate_answer(). Same grounding rules and
     confidence guardrail, but yields the answer incrementally as it's
@@ -101,6 +122,7 @@ def generate_answer_stream(query: str, chunks: list[dict]):
         query: The user's natural language question.
         chunks: Reranked chunks from reranker.rerank() -- each must
                 have a "confidence" field.
+        answer_style: "concise" (default) or "detailed".
  
     Yields:
         str fragments of the answer, in order, as Groq generates them.
@@ -114,9 +136,12 @@ def generate_answer_stream(query: str, chunks: list[dict]):
         yield "I don't have enough information in the document to answer this."
         return
  
+    system_prompt = SYSTEM_PROMPT_DETAILED if answer_style == "detailed" else SYSTEM_PROMPT
+    max_tokens = 900 if answer_style == "detailed" else 600
+
     context = _build_context(chunks)
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"Document excerpts:\n{context}\n\nQuestion: {query}"},
     ]
  
@@ -124,7 +149,7 @@ def generate_answer_stream(query: str, chunks: list[dict]):
         model=MODEL,
         messages=messages,
         temperature=0.1,
-        max_tokens=600,
+        max_tokens=max_tokens,
         stream=True,
     )
  

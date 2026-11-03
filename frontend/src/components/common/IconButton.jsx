@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import clsx from "clsx";
 
@@ -5,11 +6,12 @@ import clsx from "clsx";
  * Compact circular icon-only button, used in the header and inline
  * toolbars. Always requires an aria-label since there's no visible text.
  */
-export default function IconButton({ children, className, active, ...props }) {
+const IconButton = forwardRef(function IconButton({ children, className, active, ...props }, ref) {
   const shouldReduceMotion = useReducedMotion();
 
   return (
     <motion.button
+      ref={ref}
       whileTap={shouldReduceMotion ? undefined : { scale: 0.92 }}
       transition={{ duration: 0.12 }}
       className={clsx(
@@ -25,4 +27,6 @@ export default function IconButton({ children, className, active, ...props }) {
       {children}
     </motion.button>
   );
-}
+});
+
+export default IconButton;

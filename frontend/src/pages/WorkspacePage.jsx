@@ -17,6 +17,7 @@ import {
 } from "../services/api";
 import { formatQueryError } from "../utils/formatError";
 import { useWorkspace } from "../context/WorkspaceContext";
+import { useSettings } from "../context/SettingsContext";
 import {
   getRecentDocuments,
   upsertRecentDocument,
@@ -44,6 +45,8 @@ export default function WorkspacePage() {
     briefLoading, setBriefLoading,
     briefError, setBriefError,
   } = useWorkspace();
+
+  const { answerStyle, topSources } = useSettings();
 
   const [loading, setLoading] = useState(false);
 
@@ -174,13 +177,23 @@ export default function WorkspacePage() {
   };
 
   /**
+   * Updates feedback rating or comment on a specific assistant message.
+   */
+  const handleFeedback = (messageId, patch) => {
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === messageId ? { ...msg, ...patch } : msg))
+    );
+  };
+
+  /**
    * Falls back to the original, non-streaming /query endpoint.
    */
   const askViaFallback = async (question, requestId) => {
     try {
-      const res = await askQuestion(document.doc_id, question);
+      const res = await askQuestion(document.doc_id, question, { answerStyle, topSources });
       const { answer, sources: newSources, confidence } = res.data;
-      finalizeStreamingMessage({ text: answer, confidence });
+      const pages = (newSources || []).map((s) => s.page_num).filter(Boolean);
+      finalizeStreamingMessage({ text: answer, confidence, pages, question });
       setSources(newSources || []);
       recordForDashboard(question, newSources);
       fetchFollowups(question, answer, confidence, requestId);
@@ -204,7 +217,7 @@ export default function WorkspacePage() {
     setMessages((prev) => [
       ...prev,
       { id: `user-${timestamp}`, role: "user", text: question },
-      { id: `asst-${timestamp + 1}`, role: "assistant", text: "", streaming: true },
+      { id: `asst-${timestamp + 1}`, role: "assistant", text: "", streaming: true, question, pages: [] },
     ]);
     setLoading(true);
 
@@ -212,6 +225,8 @@ export default function WorkspacePage() {
     let streamedAnswerText = "";
 
     await askQuestionStream(document.doc_id, question, {
+      answerStyle,
+      topSources,
       onToken: (chunk) => {
         receivedAnyToken = true;
         streamedAnswerText += chunk;
@@ -220,7 +235,8 @@ export default function WorkspacePage() {
       },
       onComplete: ({ sources: newSources, confidence }) => {
         setLoading(false);
-        finalizeStreamingMessage({ confidence });
+        const pages = (newSources || []).map((s) => s.page_num).filter(Boolean);
+        finalizeStreamingMessage({ confidence, pages, question });
         setSources(newSources || []);
         recordForDashboard(question, newSources);
         fetchFollowups(question, streamedAnswerText, confidence, requestId);
@@ -239,6 +255,7 @@ export default function WorkspacePage() {
 
   return (
     <AppShell
+      resizable
       header={
         <AppHeader
           hasDocument={!!document}
@@ -264,6 +281,7 @@ export default function WorkspacePage() {
             loading={loading}
             onReset={handleReset}
             onSuggestionClick={handleAsk}
+            onFeedback={handleFeedback}
           />
           {document && (
             <>

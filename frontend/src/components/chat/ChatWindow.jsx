@@ -10,7 +10,14 @@ import { useAutoScroll } from "../../hooks/useAutoScroll";
  * scrollable message list (with smart auto-scroll that doesn't yank
  * the user downward while reading history), and the loading state.
  */
-export default function ChatWindow({ document, messages, loading, onReset, onSuggestionClick }) {
+export default function ChatWindow({
+  document,
+  messages,
+  loading,
+  onReset,
+  onSuggestionClick,
+  onFeedback,
+}) {
   const { containerRef, bottomRef } = useAutoScroll([messages, loading]);
 
   return (
@@ -34,7 +41,24 @@ export default function ChatWindow({ document, messages, loading, onReset, onSug
           msg.role === "user" ? (
             <UserMessage key={msg.id || `user-${i}`} text={msg.text} />
           ) : (
-            <AssistantMessage key={msg.id || `asst-${i}`} text={msg.text} confidence={msg.confidence} streaming={msg.streaming} />
+            <AssistantMessage
+              key={msg.id || `asst-${i}`}
+              messageId={msg.id || `asst-${i}`}
+              text={msg.text}
+              confidence={msg.confidence}
+              streaming={msg.streaming}
+              rating={msg.rating}
+              feedbackComment={msg.feedbackComment}
+              feedbackSubmitted={msg.feedbackSubmitted}
+              feedbackInputDismissed={msg.feedbackInputDismissed}
+              question={
+                msg.question ||
+                (i > 0 && messages[i - 1]?.role === "user" ? messages[i - 1].text : "")
+              }
+              pages={msg.pages || []}
+              docId={document?.doc_id}
+              onFeedback={(patch) => onFeedback?.(msg.id || `asst-${i}`, patch)}
+            />
           )
         )}
 

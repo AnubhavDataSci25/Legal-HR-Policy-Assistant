@@ -19,6 +19,22 @@ export function WorkspaceProvider({ children }) {
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefError, setBriefError] = useState(null);
 
+  /**
+   * Resets active document and conversation state from memory.
+   * If docId is passed, only resets if the active document matches docId.
+   */
+  const clearWorkspace = (docId = null) => {
+    if (!docId || document?.doc_id === docId) {
+      setDocument(null);
+      setMessages([]);
+      setSources([]);
+      setFollowupQuestions([]);
+      setBrief(null);
+      setBriefLoading(false);
+      setBriefError(null);
+    }
+  };
+
   return (
     <WorkspaceContext.Provider
       value={{
@@ -36,6 +52,7 @@ export function WorkspaceProvider({ children }) {
         setBriefLoading,
         briefError,
         setBriefError,
+        clearWorkspace,
       }}
     >
       {children}

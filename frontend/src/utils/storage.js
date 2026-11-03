@@ -69,6 +69,25 @@ export function upsertRecentDocument({ doc_id, filename, chunks_stored }) {
 }
 
 /**
+ * Removes a document from the recent documents list in localStorage.
+ */
+export function removeRecentDocument(docId) {
+  if (!docId) return [];
+  const existing = getRecentDocuments();
+  const updated = existing.filter((d) => d.docId !== docId);
+  safeSet(RECENT_DOCS_KEY, updated);
+  return updated;
+}
+
+/**
+ * Clears all recent documents from localStorage.
+ */
+export function clearRecentDocuments() {
+  safeSet(RECENT_DOCS_KEY, []);
+  return [];
+}
+
+/**
  * Records the most recent question asked against a document, so the
  * Dashboard's "Continue where you left off" card has something real to
  * show. Called once per successfully answered question.
@@ -95,6 +114,12 @@ export function incrementQuestionCount() {
   safeSet(QUESTION_COUNT_KEY, next);
   return next;
 }
+
+export function resetQuestionCount() {
+  safeSet(QUESTION_COUNT_KEY, 0);
+  return 0;
+}
+
 const BRIEF_KEY_PREFIX = "policy-assistant:brief:";
 
 /** Retrieves a cached Document Brief from localStorage. */
@@ -116,5 +141,25 @@ export function removeStoredBrief(docId) {
     localStorage.removeItem(`${BRIEF_KEY_PREFIX}${docId}`);
   } catch {
     // Storage unavailable
+  }
+}
+
+const DOC_PANEL_WIDTH_KEY = "policy-assistant:panel-doc-width";
+const SOURCE_PANEL_WIDTH_KEY = "policy-assistant:panel-source-width";
+
+/** Retrieves stored workspace panel widths with fallback defaults. */
+export function getStoredPanelWidths() {
+  return {
+    docWidth: safeGet(DOC_PANEL_WIDTH_KEY, 340),
+    sourceWidth: safeGet(SOURCE_PANEL_WIDTH_KEY, 320),
+  };
+}
+
+/** Persists customized workspace panel width to localStorage. */
+export function setStoredPanelWidth(panel, width) {
+  if (panel === "doc") {
+    safeSet(DOC_PANEL_WIDTH_KEY, width);
+  } else if (panel === "source") {
+    safeSet(SOURCE_PANEL_WIDTH_KEY, width);
   }
 }

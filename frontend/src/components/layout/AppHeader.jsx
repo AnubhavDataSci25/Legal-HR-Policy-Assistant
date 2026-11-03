@@ -1,7 +1,9 @@
+import { useRef, useState } from "react";
 import { FileStack, LayoutGrid, Moon, PanelLeft, PanelRight, Settings, Sun, User } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useTheme } from "../../hooks/useTheme";
 import IconButton from "../common/IconButton";
+import SettingsDropdown from "./SettingsDropdown";
 
 /**
  * Top application bar, shared by every page.
@@ -14,6 +16,9 @@ import IconButton from "../common/IconButton";
  */
 export default function AppHeader({ onToggleDocPanel, onToggleSourcePanel, hasDocument }) {
   const { theme, setTheme } = useTheme();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsTriggerRef = useRef(null);
+
   const isDark =
     theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
 
@@ -24,7 +29,7 @@ export default function AppHeader({ onToggleDocPanel, onToggleSourcePanel, hasDo
 
   return (
     <header
-      className="flex items-center justify-between h-16 px-4 md:px-6 border-b shrink-0 z-20"
+      className="relative flex items-center justify-between h-16 px-4 md:px-6 border-b shrink-0 z-20"
       style={{ borderColor: "var(--border)", backgroundColor: "var(--surface)" }}
     >
       <div className="flex items-center gap-3">
@@ -77,9 +82,23 @@ export default function AppHeader({ onToggleDocPanel, onToggleSourcePanel, hasDo
           {isDark ? <Sun size={17} /> : <Moon size={17} />}
         </IconButton>
 
-        <IconButton aria-label="Settings">
+        <IconButton
+          ref={settingsTriggerRef}
+          aria-label="Settings"
+          aria-expanded={settingsOpen}
+          aria-haspopup="dialog"
+          onClick={() => setSettingsOpen((prev) => !prev)}
+          active={settingsOpen}
+        >
           <Settings size={17} />
         </IconButton>
+
+        {/* Settings Popover Dropdown */}
+        <SettingsDropdown
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          triggerRef={settingsTriggerRef}
+        />
 
         {/* Mobile-only: toggle sources drawer -- workspace pages only */}
         {onToggleSourcePanel && (

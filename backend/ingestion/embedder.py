@@ -40,6 +40,15 @@ def collection_exists(doc_id: str) -> bool:
         return False
 
 
+def delete_chroma_collection(doc_id: str) -> bool:
+    """Deletes the ChromaDB collection for a document if it exists."""
+    try:
+        _chroma_client.delete_collection(name=doc_id)
+        return True
+    except Exception:
+        return False
+
+
 def embed_and_store(chunks: list[dict], doc_id: str) -> int:
     """
     Embeds a list of chunks and stores them in a ChromaDB collection

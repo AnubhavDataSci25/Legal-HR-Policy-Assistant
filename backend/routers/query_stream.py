@@ -40,7 +40,7 @@ def query_document_stream(req: QueryRequest):
 
     try:
         candidates = hybrid_retrieve(req.question, req.doc_id, top_k=10)
-        reranked = rerank(req.question, candidates, top_n=5)
+        reranked = rerank(req.question, candidates, top_n=req.top_n)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
@@ -52,13 +52,20 @@ def query_document_stream(req: QueryRequest):
     sources = (
         []
         if is_low_confidence
-        else [{"page_num": c["page_num"], "excerpt": c["text"][:200]} for c in reranked]
+        else [
+            {
+                "page_num": c["page_num"],
+                "excerpt": c["text"][:200],
+                "confidence": c.get("confidence"),
+            }
+            for c in reranked
+        ]
     )
     confidence_label = "low" if is_low_confidence else "high"
 
     def event_stream():
         try:
-            for token in generate_answer_stream(req.question, reranked):
+            for token in generate_answer_stream(req.question, reranked, answer_style=req.answer_style):
                 yield token
         except Exception as e:
             yield f"\n\n[Error while generating the answer: {str(e)}]"

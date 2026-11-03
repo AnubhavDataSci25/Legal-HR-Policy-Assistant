@@ -1,9 +1,11 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import { ChevronDown, Eye, FileText } from "lucide-react";
+import { useSettings } from "../../context/SettingsContext";
 
 export default function SourceCard({ source, index, onViewPage }) {
   const [expanded, setExpanded] = useState(false);
+  const { showScores } = useSettings();
 
   return (
     <div
@@ -23,6 +25,18 @@ export default function SourceCard({ source, index, onViewPage }) {
         >
           <FileText size={13} style={{ color: "var(--accent)" }} className="shrink-0" />
           <span className="text-sm font-medium">Page {source.page_num}</span>
+          {showScores && source.confidence != null && (
+            <span
+              className="text-[11px] font-mono font-medium px-1.5 py-0.5 rounded"
+              style={{
+                backgroundColor: "var(--accent-soft)",
+                color: "var(--accent)",
+              }}
+              title={`Relevance score: ${(source.confidence * 100).toFixed(0)}%`}
+            >
+              {Math.round(source.confidence * 100)}%
+            </span>
+          )}
         </button>
 
         <div className="flex items-center gap-1.5 shrink-0">

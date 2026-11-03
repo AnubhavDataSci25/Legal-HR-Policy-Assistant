@@ -52,11 +52,25 @@ export function getSourcePageUrl(docId, pageNum, excerpt) {
 }
 
 /**
- * Asks a question against an ingested document.
- * Returns { answer, sources: [{page_num, excerpt}], confidence: "high"|"low" }.
+ * Deletes an ingested document from disk, vector store, and brief cache.
  */
-export function askQuestion(docId, question) {
-  return client.post("/query", { doc_id: docId, question });
+export function deleteDocument(docId) {
+  return client.delete(`/document/${encodeURIComponent(docId)}`);
+}
+
+/**
+ * Asks a question against an ingested document.
+ * Returns { answer, sources: [{page_num, excerpt, confidence}], confidence: "high"|"low" }.
+ */
+export function askQuestion(docId, question, options = {}) {
+  const answerStyle = options.answer_style || options.answerStyle;
+  const topN = options.top_n || options.topSources;
+  return client.post("/query", {
+    doc_id: docId,
+    question,
+    ...(answerStyle ? { answer_style: answerStyle } : {}),
+    ...(topN ? { top_n: topN } : {}),
+  });
 }
 
 // Sentinel the backend appends after the streamed answer text, followed by
@@ -80,14 +94,29 @@ const SOURCES_SENTINEL = "[[SOURCES]]";
  * @param {(meta: {sources: Array, confidence: string}) => void} callbacks.onComplete - called once when streaming finishes successfully
  * @param {(err: Error) => void} callbacks.onError - called if the stream fails at any point
  * @param {AbortSignal} [callbacks.signal] - optional, to cancel the request early
+ * @param {string} [callbacks.answerStyle] - "concise" | "detailed"
+ * @param {number} [callbacks.topSources] - 3 | 5 | 7
  */
-export async function askQuestionStream(docId, question, { onToken, onComplete, onError, signal } = {}) {
+export async function askQuestionStream(
+  docId,
+  question,
+  { onToken, onComplete, onError, signal, answerStyle, topSources, answer_style, top_n } = {}
+) {
+  const style = answer_style || answerStyle;
+  const count = top_n || topSources;
+  const body = {
+    doc_id: docId,
+    question,
+    ...(style ? { answer_style: style } : {}),
+    ...(count ? { top_n: count } : {}),
+  };
+
   let response;
   try {
     response = await fetch(`${BASE_URL}/query/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ doc_id: docId, question }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch (networkErr) {
@@ -169,6 +198,24 @@ export async function askQuestionStream(docId, question, { onToken, onComplete, 
 }
 
 export default client;
+
+/**
+ * Sends answer feedback (thumbs up or thumbs down) with optional comment.
+ * Payload: { doc_id, question, answer, rating: "up"|"down", comment?, pages?: number[] }
+ */
+export function sendFeedback(payload) {
+  return client.post("/feedback", payload);
+}
+
+/**
+ * Retrieves aggregate feedback statistics (total, up, down).
+ * If docId is provided, returns statistics filtered by that document.
+ */
+export function getFeedbackSummary(docId) {
+  return client.get("/feedback/summary", {
+    params: docId ? { doc_id: docId } : {},
+  });
+}
 
 /**
  * Requests up to 3 follow-up question suggestions related to the

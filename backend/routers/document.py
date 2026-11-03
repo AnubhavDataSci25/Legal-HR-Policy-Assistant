@@ -108,3 +108,38 @@ def get_document_page(
     finally:
         # Always close document in memory; never save to disk
         doc.close()
+
+
+@router.delete("/document/{doc_id}")
+@router.delete("/documents/{doc_id}")
+def delete_document(doc_id: str):
+    """
+    Deletes an ingested document from disk, removes its ChromaDB vector collection,
+    and removes its cached brief JSON.
+    """
+    if not DOC_ID_REGEX.match(doc_id):
+        raise HTTPException(status_code=400, detail="Invalid document ID format.")
+
+    # 1. Delete ChromaDB vector collection
+    from ingestion.embedder import delete_chroma_collection
+    collection_deleted = delete_chroma_collection(doc_id)
+
+    # 2. Delete files from uploaded_docs/ (both PDF and brief JSON)
+    removed_files = []
+    if UPLOAD_DIR.exists():
+        prefix = f"{doc_id}_"
+        for entry in list(UPLOAD_DIR.iterdir()):
+            if entry.is_file() and entry.name.startswith(prefix):
+                try:
+                    entry.unlink(missing_ok=True)
+                    removed_files.append(entry.name)
+                except Exception:
+                    pass
+
+    return {
+        "status": "success",
+        "deleted": True,
+        "doc_id": doc_id,
+        "collection_deleted": collection_deleted,
+        "files_removed": removed_files,
+    }

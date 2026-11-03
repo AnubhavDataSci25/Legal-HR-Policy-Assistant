@@ -1,6 +1,10 @@
 import os
 import sys
 import unittest
+from pathlib import Path
+
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 # Ensure backend directory is in sys.path
 backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -99,6 +103,35 @@ class TestDocumentEndpoint(unittest.TestCase):
 
         res_max = client.get(f"/document/{doc_id}/page/1?zoom=10.0")
         self.assertEqual(res_max.status_code, 200)
+
+    def test_delete_document_invalid_format(self):
+        res = client.delete("/document/invalid_id")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Invalid document ID format", res.json()["detail"])
+
+    def test_delete_document_success(self):
+        # Create a dummy file in uploaded_docs
+        upload_dir = Path(backend_dir) / "uploaded_docs"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        dummy_doc_id = "deltest1"
+        dummy_file = upload_dir / f"{dummy_doc_id}_sample.pdf"
+        dummy_brief = upload_dir / f"{dummy_doc_id}_brief.json"
+        dummy_file.write_text("dummy pdf content", encoding="utf-8")
+        dummy_brief.write_text("{}", encoding="utf-8")
+
+        self.assertTrue(dummy_file.exists())
+        self.assertTrue(dummy_brief.exists())
+
+        res = client.delete(f"/document/{dummy_doc_id}")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertTrue(data["deleted"])
+        self.assertEqual(data["doc_id"], dummy_doc_id)
+        self.assertIn(f"{dummy_doc_id}_sample.pdf", data["files_removed"])
+        self.assertIn(f"{dummy_doc_id}_brief.json", data["files_removed"])
+
+        self.assertFalse(dummy_file.exists())
+        self.assertFalse(dummy_brief.exists())
 
 
 if __name__ == "__main__":

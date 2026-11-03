@@ -1,14 +1,20 @@
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { X } from "lucide-react";
+import { GripVertical, X } from "lucide-react";
 import IconButton from "../common/IconButton";
+import { getStoredPanelWidths, setStoredPanelWidth } from "../../utils/storage";
+
+const DEFAULT_DOC_WIDTH = 340;
+const DEFAULT_SOURCE_WIDTH = 320;
+const MIN_PANEL_WIDTH = 260;
+const MAX_PANEL_WIDTH = 640;
+const MIN_CHAT_WIDTH = 380;
 
 /**
- * Owns the three-column desktop layout (document | chat | sources) and
- * degrades it into overlay drawers below the `lg` breakpoint, per the
- * design plan's responsive strategy:
- *   - Desktop (lg+): all three columns persistent.
- *   - Below lg: document + source panels become slide-in drawers,
- *     chat takes the full remaining width.
+ * Owns the responsive workspace layout:
+ *   - Desktop (md+ for document, lg+ for sources): persistent, resizable sidebars
+ *     with interactive draggable dividers to give users full control if text is collapsing.
+ *   - Below breakpoints: slide-in drawer overlays.
  */
 export default function AppShell({
   header,
@@ -19,31 +25,318 @@ export default function AppShell({
   sourcePanelOpen,
   onCloseDocPanel,
   onCloseSourcePanel,
+  resizable = true,
 }) {
+  const [docWidth, setDocWidth] = useState(() => {
+    const { docWidth: stored } = getStoredPanelWidths();
+    return stored || DEFAULT_DOC_WIDTH;
+  });
+
+  const [sourceWidth, setSourceWidth] = useState(() => {
+    const { sourceWidth: stored } = getStoredPanelWidths();
+    return stored || DEFAULT_SOURCE_WIDTH;
+  });
+
+  const [isDraggingDoc, setIsDraggingDoc] = useState(false);
+  const [isDraggingSource, setIsDraggingSource] = useState(false);
+
+  // References for live drag coordinates
+  const dragStartRef = useRef({ startX: 0, startWidth: 0 });
+
+  // Clamp widths when window resizes to always protect minimum chat space
+  useEffect(() => {
+    const handleWindowResize = () => {
+      const windowWidth = window.innerWidth;
+      const currentSource = sourcePanel ? sourceWidth : 0;
+      const maxDoc = Math.min(MAX_PANEL_WIDTH, windowWidth - currentSource - MIN_CHAT_WIDTH);
+      if (maxDoc > MIN_PANEL_WIDTH && docWidth > maxDoc) {
+        setDocWidth(maxDoc);
+      }
+    };
+
+    window.addEventListener("resize", handleWindowResize);
+    return () => window.removeEventListener("resize", handleWindowResize);
+  }, [docWidth, sourceWidth, sourcePanel]);
+
+  // Document panel drag listeners
+  const startDocDrag = useCallback(
+    (clientX) => {
+      setIsDraggingDoc(true);
+      dragStartRef.current = { startX: clientX, startWidth: docWidth };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [docWidth]
+  );
+
+  useEffect(() => {
+    if (!isDraggingDoc) return;
+
+    const onMouseMove = (e) => {
+      const delta = e.clientX - dragStartRef.current.startX;
+      const requestedWidth = dragStartRef.current.startWidth + delta;
+      const currentSource = sourcePanel ? sourceWidth : 0;
+      const maxAllowed = Math.min(
+        MAX_PANEL_WIDTH,
+        window.innerWidth - currentSource - MIN_CHAT_WIDTH
+      );
+      const clamped = Math.max(MIN_PANEL_WIDTH, Math.min(maxAllowed, requestedWidth));
+      setDocWidth(clamped);
+      setStoredPanelWidth("doc", clamped);
+    };
+
+    const onMouseUp = () => {
+      setIsDraggingDoc(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    const onTouchMove = (e) => {
+      if (e.touches && e.touches[0]) {
+        onMouseMove(e.touches[0]);
+      }
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("touchend", onMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onMouseUp);
+    };
+  }, [isDraggingDoc, sourceWidth, sourcePanel]);
+
+  // Source panel drag listeners
+  const startSourceDrag = useCallback(
+    (clientX) => {
+      setIsDraggingSource(true);
+      dragStartRef.current = { startX: clientX, startWidth: sourceWidth };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [sourceWidth]
+  );
+
+  useEffect(() => {
+    if (!isDraggingSource) return;
+
+    const onMouseMove = (e) => {
+      const delta = dragStartRef.current.startX - e.clientX;
+      const requestedWidth = dragStartRef.current.startWidth + delta;
+      const currentDoc = documentPanel ? docWidth : 0;
+      const maxAllowed = Math.min(
+        MAX_PANEL_WIDTH,
+        window.innerWidth - currentDoc - MIN_CHAT_WIDTH
+      );
+      const clamped = Math.max(MIN_PANEL_WIDTH, Math.min(maxAllowed, requestedWidth));
+      setSourceWidth(clamped);
+      setStoredPanelWidth("source", clamped);
+    };
+
+    const onMouseUp = () => {
+      setIsDraggingSource(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    const onTouchMove = (e) => {
+      if (e.touches && e.touches[0]) {
+        onMouseMove(e.touches[0]);
+      }
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("touchend", onMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onMouseUp);
+    };
+  }, [isDraggingSource, docWidth, documentPanel]);
+
+  // Keyboard accessibility handler for document panel resizer
+  const handleDocKeyDown = (e) => {
+    const step = e.shiftKey ? 30 : 15;
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      const currentSource = sourcePanel ? sourceWidth : 0;
+      const maxAllowed = Math.min(MAX_PANEL_WIDTH, window.innerWidth - currentSource - MIN_CHAT_WIDTH);
+      const next = Math.min(maxAllowed, docWidth + step);
+      setDocWidth(next);
+      setStoredPanelWidth("doc", next);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      const next = Math.max(MIN_PANEL_WIDTH, docWidth - step);
+      setDocWidth(next);
+      setStoredPanelWidth("doc", next);
+    } else if (e.key === "Enter" || e.key === "Home") {
+      e.preventDefault();
+      setDocWidth(DEFAULT_DOC_WIDTH);
+      setStoredPanelWidth("doc", DEFAULT_DOC_WIDTH);
+    }
+  };
+
+  // Keyboard accessibility handler for sources panel resizer
+  const handleSourceKeyDown = (e) => {
+    const step = e.shiftKey ? 30 : 15;
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      const currentDoc = documentPanel ? docWidth : 0;
+      const maxAllowed = Math.min(MAX_PANEL_WIDTH, window.innerWidth - currentDoc - MIN_CHAT_WIDTH);
+      const next = Math.min(maxAllowed, sourceWidth + step);
+      setSourceWidth(next);
+      setStoredPanelWidth("source", next);
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      const next = Math.max(MIN_PANEL_WIDTH, sourceWidth - step);
+      setSourceWidth(next);
+      setStoredPanelWidth("source", next);
+    } else if (e.key === "Enter" || e.key === "Home") {
+      e.preventDefault();
+      setSourceWidth(DEFAULT_SOURCE_WIDTH);
+      setStoredPanelWidth("source", DEFAULT_SOURCE_WIDTH);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen" style={{ backgroundColor: "var(--background)" }}>
       {header}
 
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Desktop persistent document sidebar -- only rendered when a
-            documentPanel is actually provided (workspace pages only) */}
+        {/* Desktop persistent document sidebar */}
         {documentPanel && (
           <div
-            className="hidden md:block w-80 shrink-0 border-r overflow-y-auto"
-            style={{ borderColor: "var(--border)" }}
+            className="hidden md:block shrink-0 border-r overflow-y-auto"
+            style={{
+              width: `${docWidth}px`,
+              borderColor: "var(--border)",
+            }}
           >
             {documentPanel}
+          </div>
+        )}
+
+        {/* Adjustable divider between Document panel and Chat */}
+        {resizable && documentPanel && (
+          <div
+            role="separator"
+            tabIndex={0}
+            aria-orientation="vertical"
+            aria-label="Resize document panel"
+            aria-valuenow={docWidth}
+            aria-valuemin={MIN_PANEL_WIDTH}
+            aria-valuemax={MAX_PANEL_WIDTH}
+            title="Drag to resize panel (Double-click to reset)"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              startDocDrag(e.clientX);
+            }}
+            onTouchStart={(e) => {
+              if (e.touches && e.touches[0]) startDocDrag(e.touches[0].clientX);
+            }}
+            onDoubleClick={() => {
+              setDocWidth(DEFAULT_DOC_WIDTH);
+              setStoredPanelWidth("doc", DEFAULT_DOC_WIDTH);
+            }}
+            onKeyDown={handleDocKeyDown}
+            className={`hidden md:flex w-2.5 -ml-1.5 shrink-0 cursor-col-resize items-center justify-center relative select-none z-20 group transition-colors duration-micro focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+              isDraggingDoc ? "bg-accent/20" : "hover:bg-accent/15"
+            }`}
+          >
+            {/* Visual divider line */}
+            <div
+              className="w-[2px] h-full transition-colors duration-micro group-hover:bg-accent"
+              style={{
+                backgroundColor: isDraggingDoc ? "var(--accent)" : "transparent",
+              }}
+            />
+            {/* Visual grip handle */}
+            <div
+              className={`absolute top-1/2 -translate-y-1/2 w-4 h-7 rounded-full flex items-center justify-center shadow-md pointer-events-none transition-all duration-micro ${
+                isDraggingDoc
+                  ? "opacity-100 scale-105"
+                  : "opacity-0 group-hover:opacity-100 group-focus:opacity-100"
+              }`}
+              style={{
+                backgroundColor: "var(--surface-elevated)",
+                border: "1px solid var(--accent)",
+              }}
+            >
+              <GripVertical size={11} style={{ color: "var(--accent)" }} />
+            </div>
           </div>
         )}
 
         {/* Chat -- always the dominant, full-height center column */}
         <main className="flex-1 flex flex-col overflow-hidden min-w-0">{chatPanel}</main>
 
-        {/* Desktop persistent sources panel -- same conditional rendering */}
+        {/* Adjustable divider between Chat and Sources panel */}
+        {resizable && sourcePanel && (
+          <div
+            role="separator"
+            tabIndex={0}
+            aria-orientation="vertical"
+            aria-label="Resize sources panel"
+            aria-valuenow={sourceWidth}
+            aria-valuemin={MIN_PANEL_WIDTH}
+            aria-valuemax={MAX_PANEL_WIDTH}
+            title="Drag to resize panel (Double-click to reset)"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              startSourceDrag(e.clientX);
+            }}
+            onTouchStart={(e) => {
+              if (e.touches && e.touches[0]) startSourceDrag(e.touches[0].clientX);
+            }}
+            onDoubleClick={() => {
+              setSourceWidth(DEFAULT_SOURCE_WIDTH);
+              setStoredPanelWidth("source", DEFAULT_SOURCE_WIDTH);
+            }}
+            onKeyDown={handleSourceKeyDown}
+            className={`hidden lg:flex w-2.5 -mr-1.5 shrink-0 cursor-col-resize items-center justify-center relative select-none z-20 group transition-colors duration-micro focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+              isDraggingSource ? "bg-accent/20" : "hover:bg-accent/15"
+            }`}
+          >
+            {/* Visual divider line */}
+            <div
+              className="w-[2px] h-full transition-colors duration-micro group-hover:bg-accent"
+              style={{
+                backgroundColor: isDraggingSource ? "var(--accent)" : "transparent",
+              }}
+            />
+            {/* Visual grip handle */}
+            <div
+              className={`absolute top-1/2 -translate-y-1/2 w-4 h-7 rounded-full flex items-center justify-center shadow-md pointer-events-none transition-all duration-micro ${
+                isDraggingSource
+                  ? "opacity-100 scale-105"
+                  : "opacity-0 group-hover:opacity-100 group-focus:opacity-100"
+              }`}
+              style={{
+                backgroundColor: "var(--surface-elevated)",
+                border: "1px solid var(--accent)",
+              }}
+            >
+              <GripVertical size={11} style={{ color: "var(--accent)" }} />
+            </div>
+          </div>
+        )}
+
+        {/* Desktop persistent sources panel */}
         {sourcePanel && (
           <div
-            className="hidden lg:block w-80 shrink-0 border-l overflow-y-auto"
-            style={{ borderColor: "var(--border)" }}
+            className="hidden lg:block shrink-0 border-l overflow-y-auto"
+            style={{
+              width: `${sourceWidth}px`,
+              borderColor: "var(--border)",
+            }}
           >
             {sourcePanel}
           </div>

@@ -5,6 +5,7 @@ pipeline (hybrid retrieve -> rerank -> generate), and returns a
 grounded, cited answer.
 """
 
+from typing import Literal, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -19,11 +20,14 @@ router = APIRouter()
 class QueryRequest(BaseModel):
     doc_id: str = Field(..., description="doc_id returned by POST /ingest")
     question: str = Field(..., min_length=1, max_length=1000)
+    answer_style: Literal["concise", "detailed"] = "concise"
+    top_n: int = Field(5, ge=3, le=7)
 
 
 class SourceExcerpt(BaseModel):
     page_num: int
     excerpt: str
+    confidence: Optional[float] = None
 
 
 class QueryResponse(BaseModel):
@@ -45,8 +49,8 @@ def query_document(req: QueryRequest):
 
     try:
         candidates = hybrid_retrieve(req.question, req.doc_id, top_k=10)
-        reranked = rerank(req.question, candidates, top_n=5)
-        result = generate_answer(req.question, reranked)
+        reranked = rerank(req.question, candidates, top_n=req.top_n)
+        result = generate_answer(req.question, reranked, answer_style=req.answer_style)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
